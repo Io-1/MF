@@ -131,7 +131,6 @@ while True:
                 rm_ids = input("")
                 if rm_ids == "q": break
                 rm_ids = tuple(i.strip() for i in rm_ids.split(","))
-                print(rm_ids)
                 try:
                     rm_ids = [int(x) for x in rm_ids]
                 except ValueError:
@@ -205,8 +204,7 @@ while True:
                 cur.execute(select_morphs_cores_query, (inputs, ))
                 morphs_join_cores = cur.fetchall()
 
-            if collection_type == "theme": morph_ids = tuple(dict.fromkeys(tuple(item[2] if item[3] is not None else item[0] for item in morphs_join_cores)))
-            elif collection_type == "pattern": morph_ids = tuple(dict.fromkeys(tuple(item[2] if item[3] is not None and bool(re.search(name, item[3])) else item[0] for item in morphs_join_cores)))
+            if collection_type == "pattern": morph_ids = tuple(dict.fromkeys(tuple(item[2] if item[3] is not None and bool(re.search(name, item[3])) else item[0] for item in morphs_join_cores)))
             else: morph_ids = tuple(dict.fromkeys(tuple(item[0] for item in morphs_join_cores)))
                 
             
@@ -214,10 +212,11 @@ while True:
             type_id = cur.fetchone()
             collection_morph_ids = tuple((type_id, morph_id) for morph_id in morph_ids)
             cur.executemany(insert_collection_morph_ids.format(collection_type = collection_type), collection_morph_ids)
-            cur.execute(insert_collection_item.format(collection_type = collection_type), (type_id, ))
-            collection_id = cur.fetchone()
-            cur.execute(insert_srs_item, (collection_id, name, note))
-            conn.commit()
+            if collection_type not in ("pattern", "cores"):
+                cur.execute(insert_collection_item.format(collection_type = collection_type), (type_id, ))
+                collection_id = cur.fetchone()
+                cur.execute(insert_srs_item, (collection_id, name, note))
+                conn.commit()
 
     if mode == "q": break
     continue
