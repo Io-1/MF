@@ -89,13 +89,8 @@ VALUES (%s)
 returning id;
 """
 
-insert_into_sessions_morphs_query = f"""
-INSERT INTO sessions_morphs (session_id, morph)
-VALUES (%s, %s)
-"""
-
-insert_into_external_relations_query = f"""
-INSERT INTO external_relations (m1_id, m2_id, n)
+insert_into_relations_query = f"""
+INSERT INTO relations (m1_id, m2_id, n)
 SELECT m1.id, m2.id, 1
 FROM morphs m1
 CROSS JOIN morphs m2
@@ -103,7 +98,7 @@ WHERE m1.morph = %s
 AND m2.morph = %s
 AND m1.id < m2.id
 ON CONFLICT (m1_id, m2_id)
-DO UPDATE SET w = external_relations.n + EXCLUDED.n;
+DO UPDATE SET w = relations.n + EXCLUDED.n;
 """
 
 insert_into_cores_query = f"""
@@ -137,7 +132,7 @@ conn = psycopg2.connect(
 
 cur = conn.cursor()
 
-head_items = read_chunks("galva")
+head_items = (item for item in read_chunks("galva") if len(item) > 1)
 snappers_items = read_chunks("ešeriai")
 
 chains = head_items + snappers_items
@@ -145,9 +140,9 @@ chains = head_items + snappers_items
 if input("y to upload current session, any to skip.") == "y" and chains:
     chains = [[re.sub(r"\s", r"", s.lower()) for s in subchain] for subchain in chains]
     chain_relations = tuple(pair for chain in chains for pair in product(chain, repeat=2))
-    chain_morphs = tuple((morph,) for item in chains for morph in item if len(item) > 1)
+    morphs = tuple((morph,) for item in chains for morph in item)
     link_morphs = tuple(morph for item in chains for morph in item if len(item) == 1)
-    special_items = [item[0] for item in chain_morphs if re.search(r"[^a-ząčęėįšųūž]", item[0])]
+    special_items = [item[0] for item in morphs if re.search(r"[^a-ząčęėįšųūž]", item[0])]
 
     if special_items:
         print("Special characters in chains to upload to database found.")
@@ -162,9 +157,8 @@ if input("y to upload current session, any to skip.") == "y" and chains:
 
     session_morphs = tuple((session_id, morph) for item in chains for morph in item)
 
-    cur.executemany(insert_into_sessions_morphs_query, session_morphs)
-    cur.executemany(insert_morph_to_morphs_query, chain_morphs)
-    cur.executemany(insert_into_external_relations_query, chain_relations)
+    cur.executemany(insert_morph_to_morphs_query, morphs)
+    cur.executemany(insert_into_relations_query, chain_relations)
     conn.commit()
 
     empty_file("galva")
@@ -182,7 +176,7 @@ if input("y to upload current session, any to skip.") == "y" and chains:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_files = []
-        for i, morph in enumerate(list(dict.fromkeys(chain_morphs))):
+        for i, morph in enumerate(list(dict.fromkeys(morphs))):
             temp_path = os.path.join(tmpdir, f"temp_{i}.wav")
             engine.save_to_file(morph, temp_path)
             temp_files.append(temp_path)
@@ -245,7 +239,7 @@ if input("y to upload current session, any to skip.") == "y" and chains:
     file_drive.Upload()
 
 if input("y to initiate core updating procedure.") == "y" and chains:
-    cur.execute("SELECT morph FROM MORPHS WHERE id NOT in (SELECT morph_id FROM morphs_cores)")
+    cur.execute("SELECT morph FROM morphs WHERE id NOT in (SELECT morph_id FROM morphs_cores)")
 
     morphs_without_cores = tuple(item[0] for item in cur.fetchall())
 
