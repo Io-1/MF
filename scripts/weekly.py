@@ -90,15 +90,15 @@ returning id;
 """
 
 insert_into_relations_query = f"""
-INSERT INTO relations (m1_id, m2_id, n)
+INSERT INTO relations (m1_id, m2_id, sn)
 SELECT m1.id, m2.id, 1
 FROM morphs m1
 CROSS JOIN morphs m2
 WHERE m1.morph = %s
 AND m2.morph = %s
 AND m1.id < m2.id
-ON CONFLICT (m1_id, m2_id)
-DO UPDATE SET w = relations.n + EXCLUDED.n;
+ON CONFLICT (m1_id, m2_id, relation)
+DO UPDATE SET sn = relations.sn + EXCLUDED.sn;
 """
 
 insert_into_cores_query = f"""
@@ -132,10 +132,13 @@ conn = psycopg2.connect(
 
 cur = conn.cursor()
 
-head_items = (item for item in read_chunks("galva") if len(item) > 1)
+
+head_items = read_chunks("galva")
+head_chains = list(item for item in head_items if len(item) > 1)
+head_links = tuple(morph for item in head_items for morph in item if len(item) == 1)
 snappers_items = read_chunks("ešeriai")
 
-chains = head_items + snappers_items
+chains = head_chains + snappers_items
 
 if input("y to upload current session, any to skip.") == "y" and chains:
     chains = [[re.sub(r"\s", r"", s.lower()) for s in subchain] for subchain in chains]
@@ -151,18 +154,14 @@ if input("y to upload current session, any to skip.") == "y" and chains:
         print("Exiting script until items with special characters are resolved.")
         sys.exit(1)
 
-    cur.execute(insert_into_sessions_query, (input("Note on last session | "),))
-    conn.commit()
-    session_id = cur.fetchone()[0]
-
-    session_morphs = tuple((session_id, morph) for item in chains for morph in item)
-
-    cur.executemany(insert_morph_to_morphs_query, morphs)
-    cur.executemany(insert_into_relations_query, chain_relations)
-    conn.commit()
+    # cur.executemany(insert_morph_to_morphs_query, morphs)
+    # cur.executemany(insert_into_relations_query, chain_relations)
+    # conn.commit()
 
     empty_file("galva")
     empty_file("ešeriai")
+
+    link_morphs = list(dict.fromkeys(head_links + link_morphs))
 
     append_words("galva", link_morphs)
 
