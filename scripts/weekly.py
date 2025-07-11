@@ -154,9 +154,9 @@ if input("y to upload current session, any to skip.") == "y" and chains:
         print("Exiting script until items with special characters are resolved.")
         sys.exit(1)
 
-    # cur.executemany(insert_morph_to_morphs_query, morphs)
-    # cur.executemany(insert_into_relations_query, chain_relations)
-    # conn.commit()
+    cur.executemany(insert_morph_to_morphs_query, morphs)
+    cur.executemany(insert_into_relations_query, chain_relations)
+    conn.commit()
 
     empty_file("galva")
     empty_file("ešeriai")
