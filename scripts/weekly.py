@@ -97,7 +97,7 @@ CROSS JOIN morphs m2
 WHERE m1.morph = %s
 AND m2.morph = %s
 AND m1.id < m2.id
-ON CONFLICT (m1_id, m2_id, relation)
+ON CONFLICT (m1_id, m2_id)
 DO UPDATE SET sn = relations.sn + EXCLUDED.sn;
 """
 
