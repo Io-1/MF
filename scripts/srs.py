@@ -231,8 +231,8 @@ while True:
         inputs = []
         while True:
             input_morph = input("")
-            if input_morph == "q": break
-            elif input_morph == "p": print(f"--- {collection_morphs}")
+            if input_morph in ("n", "q"): break
+            elif input_morph == "p": print(f"--- {tuple(morph for morph in collection_morphs if morph not in inputs)}")
             elif input_morph == "z": input(f"--- Paused")
             elif len(input_morph) < 2: continue
             else: inputs.append(input_morph)
@@ -255,10 +255,10 @@ while True:
         elif action == "n": continue
 
         correct_sum = sum(rate for core_id, rate in input_core_id_to_rate.items() if core_id in collection_core_ids_to_rates)
-        print(correct_sum)
         total_sum = max(sum(rate for core_id, rate in collection_core_ids_to_rates.items()), 0.0001)
-        print(total_sum)
         quality = 5 * min((correct_sum / total_sum), 1)
+        print("---")
+        print(tuple(morph for morph in collection_morphs if morph not in inputs))
         print(quality)
         reps += 1
         if quality < 3.5:
@@ -266,13 +266,13 @@ while True:
             interval = 1
         elif quality < 2: interval = 0.5
         else: interval = int(max(interval, 1) * ease)
-        print(ease)
         ease = round( (ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))) , 2)
         print(ease)
         if ease < 0.8:
             ease = 0.8
         reviewed = datetime.date.today()
         due = reviewed + datetime.timedelta(days = int(interval * ease))
+        print(due)
         srs_card_updated = (reps, fails, ease, interval, due, reviewed, card)
         cur.execute(update_srs_query, srs_card_updated)
         conn.commit()

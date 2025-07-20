@@ -42,12 +42,7 @@ def append_words(file_name, words):
 
 def empty_file(file_name):
     file_name_ = f"{file_name}.md"
-    backup_name = f"{file_name}_backup.md"
     chunks_path = os.path.join(z_dir, file_name_)
-    backup_path = os.path.join(z_dir, backup_name)
-    with open(chunks_path, "r", encoding="utf-8") as file:
-        with open(backup_path, "w", encoding="utf-8") as backup:
-            backup.write(file.read())
     with open(chunks_path, "w", encoding="utf-8") as file:
         file.write("[[()_Rėpas]]")
         return None

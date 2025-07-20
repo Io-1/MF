@@ -90,60 +90,62 @@ while True:
     if mode == "edit":
         while True:
             collection_type = input("Collection type | ").lower()
-            if collection_type == "q": break
+            if collection_type in ("", "q"): break
             cur.execute(f"SELECT id, {collection_type}, note FROM {collection_type}s ORDER BY id")
-            for collection_id, name, note in cur.fetchall():
-                print(f"{collection_id}: {name} | {note}")
-            selection = input("")
-            if selection == "q": break
-            cur.execute(select_collection_morphs.format(collection_type=collection_type), (int(selection), ))
-            collection = [row[0] for row in cur.fetchall()]
-            print("---")
-            for id, morph in enumerate(collection):
-                print(f"{morph}")
-
-            new_inputs = []
+            collections = cur.fetchall()
             while True:
-                morph = input()
-                if morph in ("n", "q"): break
-                elif len(morph) < 2: continue
-                new_inputs.append((morph, ))
-            if morph == "q": break
-            new_inputs = tuple(new_inputs)
-
-            if new_inputs:
-                cur.executemany(insert_morph_to_morphs_query, new_inputs)
-                conn.commit()
-                cur.execute(select_morphs_cores_query, (new_inputs, ))
-            morphs_join_cores = cur.fetchall()
-            add_ids = tuple((int(selection), item[0] ) for item in morphs_join_cores)
-
-
-            cur.executemany(insert_collection_morph_ids.format(collection_type=collection_type), add_ids)
-            conn.commit()
-
-            cur.execute(select_collection_morphs.format(collection_type=collection_type), (int(selection), ))
-            collection = [row[0] for row in cur.fetchall()]
-
-            while True:
+                for collection_id, name, note in collections:
+                    print(f"{collection_id}: {name} | {note}")
+                selection = input("")
+                if selection == "q": break
+                cur.execute(select_collection_morphs.format(collection_type=collection_type), (int(selection), ))
+                collection = [row[0] for row in cur.fetchall()]
+                print("---")
                 for id, morph in enumerate(collection):
-                    print(f"{id}. {morph}")
-                rm_ids = input("")
-                if rm_ids == "q": break
-                rm_ids = tuple(i.strip() for i in rm_ids.split(","))
-                try:
-                    rm_ids = [int(x) for x in rm_ids]
-                except ValueError:
-                    continue
-                if (rm_ids != ("", ) or rm_ids != ("n", )) and not all(0 <= i <= len(collection) for i in rm_ids): continue
-                rm_morphs = tuple((collection[rm_id], ) for rm_id in rm_ids)
-                break
-            if rm_ids == "q": continue
-            cur.execute(select_morphs_cores_query, (rm_morphs, ))
-            morphs_join_cores = cur.fetchall()
-            rm_ids = tuple((int(selection), item[0]) for item in morphs_join_cores)
-            cur.executemany(delete_collection_morph_ids.format(collection_type=collection_type), rm_ids)
-            conn.commit()
+                    print(f"{morph}")
+
+                new_inputs = []
+                while True:
+                    morph = input()
+                    if morph in ("n", "q"): break
+                    elif len(morph) < 2: continue
+                    new_inputs.append((morph, ))
+                if morph == "q": continue
+                new_inputs = tuple(new_inputs)
+
+                if new_inputs:
+                    cur.executemany(insert_morph_to_morphs_query, new_inputs)
+                    conn.commit()
+                    cur.execute(select_morphs_cores_query, (new_inputs, ))
+                morphs_join_cores = cur.fetchall()
+                add_ids = tuple((int(selection), item[0] ) for item in morphs_join_cores)
+
+
+                cur.executemany(insert_collection_morph_ids.format(collection_type=collection_type), add_ids)
+                conn.commit()
+
+                cur.execute(select_collection_morphs.format(collection_type=collection_type), (int(selection), ))
+                collection = [row[0] for row in cur.fetchall()]
+
+                while True:
+                    for id, morph in enumerate(collection):
+                        print(f"{id}. {morph}")
+                    rm_ids = input("")
+                    if rm_ids in ("n", "q"): break
+                    rm_ids = tuple(i.strip() for i in rm_ids.split(","))
+                    try:
+                        rm_ids = [int(x) for x in rm_ids]
+                    except ValueError:
+                        continue
+                    if (rm_ids != ("", ) or rm_ids != ("n", )) and not all(0 <= i <= len(collection) for i in rm_ids): continue
+                    rm_morphs = tuple((collection[rm_id], ) for rm_id in rm_ids)
+                    break
+                if rm_ids in ("n", "q"): continue
+                cur.execute(select_morphs_cores_query, (rm_morphs, ))
+                morphs_join_cores = cur.fetchall()
+                rm_ids = tuple((int(selection), item[0]) for item in morphs_join_cores)
+                cur.executemany(delete_collection_morph_ids.format(collection_type=collection_type), rm_ids)
+                conn.commit()
 
     elif mode == "add":
         while True:
@@ -216,7 +218,7 @@ while True:
                 cur.execute(insert_collection_item.format(collection_type = collection_type), (type_id, ))
                 collection_id = cur.fetchone()
                 cur.execute(insert_srs_item, (collection_id, name, note))
-                conn.commit()
+            conn.commit()
 
     if mode == "q": break
     continue
