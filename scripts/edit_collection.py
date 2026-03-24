@@ -30,6 +30,11 @@ SELECT m.id, mc.core_id, c.morph_id, c.core
     WHERE m.morph ~ '{pattern}'
 """
 
+select_patterns_query = """
+SELECT p.pattern
+FROM patterns p
+"""
+
 select_morphs_cores_query = f"""
 SELECT m.id, mc.core_id, c.morph_id, c.core
     FROM morphs m
@@ -168,6 +173,9 @@ while True:
             inputs = []
 
             if collection_type == "pattern":
+                cur.execute(select_patterns_query.format(pattern = name))
+                patterns = cur.fetchall()
+                if (name, ) in patterns: continue
                 cur.execute(select_pattern_morphs_to_cores_query.format(pattern = name))
                 morphs_join_cores = cur.fetchall()
                 morph_ids = tuple(dict.fromkeys(tuple(item[2] if item[3] is not None and bool(re.search(name, item[3])) else item[0] for item in morphs_join_cores)))
