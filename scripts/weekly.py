@@ -47,6 +47,17 @@ def empty_file(file_name):
         file.write("[[()_Rėpas]]")
         return None
     
+
+conn = psycopg2.connect(
+    dbname=os.getenv("database"),
+    user=os.getenv("user"),
+    password=os.getenv("password"),
+    host=os.getenv("host"),
+    port=os.getenv("port")
+) 
+
+cur = conn.cursor()
+
 select_pattern_morphs_to_cores_query = """
 SELECT m.id, mc.core_id, c.morph_id, c.core
     FROM morphs m
@@ -115,6 +126,65 @@ insert_collection_morph_ids = """
 INSERT INTO morphs_{collection_type}s ({collection_type}_id, morph_id)
 VALUES (%s, %s)
 ON CONFLICT DO NOTHING;
+"""
+
+insert_collection_query = """
+INSERT INTO {collection_type}s ({collection_type}, note)
+VALUES (%s, %s)
+ON CONFLICT ({collection_type}) 
+DO UPDATE SET {collection_type} = EXCLUDED.{collection_type}
+RETURNING id;
+"""
+
+insert_morph_to_morphs_query = f"""
+INSERT INTO morphs(morph, entered)
+VALUES (%s, 1)
+ON CONFLICT (morph) DO UPDATE SET entered = morphs.entered + 1
+RETURNING id;
+"""
+
+select_morphs_cores_query = f"""
+SELECT m.id, mc.core_id, c.morph_id, c.core
+    FROM morphs m
+    LEFT JOIN morphs_cores mc
+    ON m.id = mc.morph_id
+    LEFT JOIN cores c
+    ON mc.core_id = c.id
+    WHERE m.morph IN %s
+"""
+
+insert_collection_item = """
+INSERT INTO collections ({collection_type}_id)
+VALUES (%s)
+ON CONFLICT ({collection_type}_id) 
+DO UPDATE SET {collection_type}_id = EXCLUDED.{collection_type}_id
+RETURNING id;
+"""
+
+insert_collection_morph_ids = """
+INSERT INTO morphs_{collection_type}s ({collection_type}_id, morph_id)
+VALUES (%s, %s)
+ON CONFLICT DO NOTHING;
+"""
+
+insert_srs_item = f"""
+INSERT INTO SRS (collection_id, collection_name, collection_note)
+VALUES (%s, %s, %s)
+ON CONFLICT (collection_id) DO NOTHING;
+"""
+
+insert_morph_to_morphs_query = f"""
+INSERT INTO morphs (morph, entered)
+VALUES (%s, 1)
+ON CONFLICT (morph) DO UPDATE SET entered = morphs.entered + 1
+RETURNING id;
+"""
+
+insert_core_query = f"""
+INSERT INTO cores (core, morph_id)
+VALUES (%s, %s)
+ON CONFLICT (core)
+DO NOTHING
 """
 
 conn = psycopg2.connect(
@@ -285,6 +355,118 @@ if input("y to initiate core updating procedure.") == "y" and chains:
     cur.execute(insert_collection_morph_ids, morph_ids_core_ids)
     conn.commit()
 
+
+
+if input("y to upload current krill to morphs and clusters, any to skip.") == "y":
+    
+    inputs = read_chunks("krilius")
+
+    collection_type = "cluster"
+
+    # Process everything in a SINGLE loop to prevent data loss
+    for snapper in inputs:
+        # 1. Prepare morphs tuple for this batch
+        snapper_t = tuple((morph, ) for morph in snapper) 
+        
+        # 2. Insert Morphs
+        cur.executemany(insert_morph_to_morphs_query, snapper_t)
+        conn.commit() # Commit the morphs first
+        
+        # 3. Retrieve IDs for THIS batch immediately
+        # We use the morphs we just processed to find their IDs
+        cur.execute(select_morphs_cores_query, (tuple(x[0] for x in snapper_t), ))
+        morphs_join_cores = cur.fetchall() 
+        
+        # 4. Insert the Collection (Cluster)
+        cur.execute(insert_collection_query.format(collection_type=collection_type), (snapper[0], ""))
+        type_id_row = cur.fetchone() 
+        
+        # Check if cluster insertion was successful (or returned an existing ID)
+        if type_id_row:
+            type_id = type_id_row[0] # Safely extract the ID integer from the tuple
+            
+            # 5. Link Morphs to this Cluster
+            # Get unique morph IDs from the fetchall result
+            current_morph_ids = list(set(item[0] for item in morphs_join_cores))
+            
+            # Create link pairs: (Cluster_ID, Morph_ID)
+            collection_morph_ids = [(type_id, m_id) for m_id in current_morph_ids]
+            
+            cur.executemany(insert_collection_morph_ids.format(collection_type=collection_type), collection_morph_ids)
+
+            # 6. SRS / Collections Table Insert (The logic I missed!)
+            if collection_type not in ("pattern", "cores"):
+                # Insert into the main collections table to get the global ID
+                cur.execute(insert_collection_item.format(collection_type=collection_type), (type_id, ))
+                collection_id_row = cur.fetchone()
+                
+                if collection_id_row:
+                    collection_id = collection_id_row[0] # Safely extract ID
+                    # Insert into SRS using the global collection_id and the cluster name (snapper[0])
+                    cur.execute(insert_srs_item, (collection_id, snapper[0], ""))
+            
+            # Commit the links and SRS data for this batch
+            conn.commit()
+
+    # Clear the file only after all batches are processed
+    empty_file("krilius")
+    
+
+if input("y to update current cores to morphs and cores, any to skip.") == "y":
+    cores = read_chunks("cores")
+    delete_morphs = tuple((item[0],) for item in cores if "delete" in item)
+
+    cur.executemany(f"DELETE FROM morphs WHERE morph = %s", delete_morphs)
+    conn.commit()
+
+    cores = [item for item in cores if "delete" not in item]
+
+    to_core_pairs = tuple((item[0], core) for item in cores for core in item[1:])
+
+    new_morphs = tuple((item[1],) for item in to_core_pairs)
+
+    cur.executemany(insert_morph_to_morphs_query, new_morphs)
+
+    conn.commit()
+
+    morphs = tuple(item[0] for item in to_core_pairs)
+
+    cur.execute(f'SELECT morph, id FROM morphs WHERE morph in %s', (morphs,))
+    morph_morph_id = cur.fetchall()
+
+    morph_to_morph_id = {item[0]: item[1] for item in morph_morph_id}
+
+    cores = tuple(item[1] for item in to_core_pairs)
+
+    cur.execute(f"SELECT morph, id FROM morphs WHERE morph in %s", (tuple(core for core in cores),))
+    cores_morph_ids = tuple(cur.fetchall())
+
+    cur.executemany(insert_core_query, cores_morph_ids)
+
+    cur.execute(f'SELECT core, id FROM cores WHERE core in %s', (cores,))
+    core_core_id = cur.fetchall()
+
+    core_to_core_id = {item[0]: item[1] for item in core_core_id}
+
+    the_thing = tuple((morph_to_morph_id[item[0]], core_to_core_id[item[1]]) for item in to_core_pairs)
+
+    cur.executemany(f'INSERT INTO morphs_cores (morph_id, core_id) VALUES (%s, %s) ON CONFLICT DO NOTHING', the_thing)
+    conn.commit()
+
+    core_thing = tuple((core_to_core_id[core], core_to_core_id[core]) for core in core_to_core_id)
+
+    cur.execute(f"SELECT morph_id, id FROM cores")
+    core_core = cur.fetchall()
+
+    cur.executemany(f'INSERT INTO morphs_cores (morph_id, core_id) VALUES (%s, %s) ON CONFLICT DO NOTHING', core_core)
+    conn.commit()
+
+    cur.execute("SELECT morph FROM MORPHS WHERE id NOT in (SELECT morph_id FROM morphs_cores)")
+    no_core_morphs = sorted([morph[0] for morph in cur.fetchall()])
+
+    empty_file("cores")
+    append_words("cores", no_core_morphs)
+
 collection_type = "pattern"
 cur.execute(f"SELECT id, pattern FROM patterns")
 pattern_items = cur.fetchall()
@@ -306,8 +488,8 @@ for item in pattern_items:
     cur.execute(insert_srs_item, (collection_id, item[1], None))
     conn.commit()
 
-# for item in pattern_items:
-#     cur.execute(f"SELECT id FROM morphs WHERE morph ~ %s", (item[1], ))
-#     collection = tuple((item[0], morph_id[0]) for morph_id in cur.fetchall())
-#     cur.executemany(f"INSERT INTO morphs_patterns (pattern_id, morph_id) VALUES (%s, %s)", collection)
-#     conn.commit()
+for item in pattern_items:
+    cur.execute(f"SELECT id FROM morphs WHERE morph ~ %s", (item[1], ))
+    collection = tuple((item[0], morph_id[0]) for morph_id in cur.fetchall())
+    cur.executemany(f"INSERT INTO morphs_patterns (pattern_id, morph_id) VALUES (%s, %s) ON CONFLICT (pattern_id, morph_id) DO NOTHING", collection)
+    conn.commit()
