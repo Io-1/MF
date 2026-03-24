@@ -250,14 +250,10 @@ if input("y to upload current session, any to skip.") == "y" and chains:
             segment = AudioSegment.from_wav(temp_wav)
             audio_final += segment + silence_segment
 
-    # Passe en mono 16 kHz
     audio_final = audio_final.set_channels(1).set_frame_rate(16000)
 
     audio_final_dur = round(len(audio_final) / 60000, 2)
 
-    # ------------------------
-    # 2) Export local avec timestamp
-    # ------------------------
     now = datetime.datetime.now().strftime("%m%d")
     opus_name = f"MF_{audio_final_dur}_{now}.opus"
     opus_path = os.path.join(opus_dir, opus_name)
@@ -268,9 +264,6 @@ if input("y to upload current session, any to skip.") == "y" and chains:
         parameters=["-c:a", "libopus", "-b:a", "16k"]
     )
 
-    # ------------------------
-    # 3) Authentification PyDrive
-    # ------------------------
     gauth = GoogleAuth()
     gauth.settings['client_config_file'] = 'client_secrets.json'
 
@@ -290,9 +283,6 @@ if input("y to upload current session, any to skip.") == "y" and chains:
 
     drive = GoogleDrive(gauth)
 
-    # ------------------------
-    # 4) Upload dans un dossier donné
-    # ------------------------
 
     file_drive = drive.CreateFile({
         'title': opus_name, 
@@ -363,52 +353,37 @@ if input("y to upload current krill to morphs and clusters, any to skip.") == "y
 
     collection_type = "cluster"
 
-    # Process everything in a SINGLE loop to prevent data loss
     for snapper in inputs:
-        # 1. Prepare morphs tuple for this batch
         snapper_t = tuple((morph, ) for morph in snapper) 
         
-        # 2. Insert Morphs
         cur.executemany(insert_morph_to_morphs_query, snapper_t)
-        conn.commit() # Commit the morphs first
+        conn.commit()
         
-        # 3. Retrieve IDs for THIS batch immediately
-        # We use the morphs we just processed to find their IDs
         cur.execute(select_morphs_cores_query, (tuple(x[0] for x in snapper_t), ))
         morphs_join_cores = cur.fetchall() 
         
-        # 4. Insert the Collection (Cluster)
         cur.execute(insert_collection_query.format(collection_type=collection_type), (snapper[0], ""))
         type_id_row = cur.fetchone() 
         
-        # Check if cluster insertion was successful (or returned an existing ID)
         if type_id_row:
-            type_id = type_id_row[0] # Safely extract the ID integer from the tuple
+            type_id = type_id_row[0]
             
-            # 5. Link Morphs to this Cluster
-            # Get unique morph IDs from the fetchall result
             current_morph_ids = list(set(item[0] for item in morphs_join_cores))
             
-            # Create link pairs: (Cluster_ID, Morph_ID)
             collection_morph_ids = [(type_id, m_id) for m_id in current_morph_ids]
             
             cur.executemany(insert_collection_morph_ids.format(collection_type=collection_type), collection_morph_ids)
 
-            # 6. SRS / Collections Table Insert (The logic I missed!)
             if collection_type not in ("pattern", "cores"):
-                # Insert into the main collections table to get the global ID
                 cur.execute(insert_collection_item.format(collection_type=collection_type), (type_id, ))
                 collection_id_row = cur.fetchone()
                 
                 if collection_id_row:
-                    collection_id = collection_id_row[0] # Safely extract ID
-                    # Insert into SRS using the global collection_id and the cluster name (snapper[0])
+                    collection_id = collection_id_row[0]
                     cur.execute(insert_srs_item, (collection_id, snapper[0], ""))
             
-            # Commit the links and SRS data for this batch
             conn.commit()
 
-    # Clear the file only after all batches are processed
     empty_file("krilius")
     
 
