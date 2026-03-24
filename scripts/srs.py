@@ -229,15 +229,22 @@ while True:
         time_start = time.perf_counter()
 
         inputs = []
+        printed_inputs = []
+        did_print = False
         while True:
             input_morph = input("")
             if input_morph in ("n", "q"): break
-            elif input_morph == "p": print(f"--- {tuple(morph for morph in collection_morphs if morph not in inputs)}")
+            elif input_morph == "p":
+                print(f"--- {tuple(morph for morph in collection_morphs if morph not in inputs)}")
+                did_print = True
             elif input_morph == "z": input(f"--- Paused")
             elif len(input_morph) < 2: continue
-            else: inputs.append(input_morph)
+            else:
+                inputs.append(input_morph)
+                if did_print:
+                    printed_inputs.append(input_morph)  
 
-        inputs = tuple(dict.fromkeys(inputs))
+        inputs = tuple(dict.fromkeys(x for x in inputs if x not in printed_inputs))
         duration = int(time.perf_counter() - time_start)
 
         if inputs:
@@ -256,7 +263,7 @@ while True:
 
         correct_sum = sum(rate for core_id, rate in input_core_id_to_rate.items() if core_id in collection_core_ids_to_rates)
         total_sum = max(sum(rate for core_id, rate in collection_core_ids_to_rates.items()), 0.0001)
-        quality = 5 * min((correct_sum / total_sum), 1)
+        quality = round(5 * min((correct_sum / total_sum), 1), 2)
         print("---")
         print(tuple(morph for morph in collection_morphs if morph not in inputs))
         print(quality)
@@ -277,7 +284,7 @@ while True:
         cur.execute(update_srs_query, srs_card_updated)
         conn.commit()
 
-        updated_rate_core_id = tuple( (max(alpha * (core_id not in input_core_id_to_rate) + (1 - alpha) * (rate), 0.2), core_id) for core_id, rate in collection_core_ids_to_rates.items())
+        updated_rate_core_id = tuple( (max(round(alpha * (core_id not in input_core_id_to_rate) + (1 - alpha) * (rate), 2), 0.2), core_id) for core_id, rate in collection_core_ids_to_rates.items())
 
         cur.executemany(update_cores_rates_query, updated_rate_core_id)
         conn.commit()
